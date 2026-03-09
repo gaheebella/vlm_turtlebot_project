@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 import open_clip
+from config import prompts
 
 
 def main() -> None:
@@ -20,14 +21,6 @@ def main() -> None:
     if not image_path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    prompts = [
-        "a door directly in front of the robot",
-        "a chair blocking the robot path",
-        "a table obstacle",
-        "a long indoor corridor",
-        "free open floor space",
-        "a close wall directly blocking the robot"
-    ]
 
     image = preprocess(Image.open(image_path).convert("RGB")).unsqueeze(0).to(device)
     text = tokenizer(prompts).to(device)

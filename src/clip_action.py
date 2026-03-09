@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 import open_clip
+from config import prompts
 
 
 def decide_action(label: str) -> str:
@@ -32,15 +33,6 @@ def main() -> None:
     )
     model = model.to(device)
     tokenizer = open_clip.get_tokenizer("ViT-B-32")
-
-    prompts = [
-        "a door in front of the robot",
-        "a chair blocking the path",
-        "a table in the scene",
-        "an open corridor",
-        "free space for navigation",
-        "a wall in front of the robot",
-    ]
 
     text = tokenizer(prompts).to(device)
 
