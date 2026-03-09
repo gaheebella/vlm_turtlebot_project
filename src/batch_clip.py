@@ -1,0 +1,64 @@
+#data/images/ 폴더 안의 이미지 전체를 자동으로 읽고, 각 이미지의 scene label을 출력하는 것
+
+from pathlib import Path
+
+import torch
+from PIL import Image
+import open_clip
+
+
+def main() -> None:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        "ViT-B-32",
+        pretrained="openai",
+    )
+    model = model.to(device)
+    tokenizer = open_clip.get_tokenizer("ViT-B-32")
+
+    prompts = [
+        "a door in front of the robot",
+        "a chair blocking the path",
+        "a table in the scene",
+        "an open corridor",
+        "free space for navigation",
+        "a wall in front of the robot",
+    ]
+
+    text = tokenizer(prompts).to(device)
+
+    image_dir = Path("data/images")
+    image_paths = list(image_dir.glob("*.jpg")) + list(image_dir.glob("*.jpeg")) + list(image_dir.glob("*.png"))
+
+    if not image_paths:
+        raise FileNotFoundError(f"No images found in {image_dir}")
+
+    print("\nBatch CLIP inference results:\n")
+
+    with torch.no_grad():
+        text_features = model.encode_text(text)
+        text_features /= text_features.norm(dim=-1, keepdim=True)
+
+        for image_path in image_paths:
+            image = preprocess(Image.open(image_path).convert("RGB")).unsqueeze(0).to(device)
+
+            image_features = model.encode_image(image)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+            scores = similarity[0].cpu().tolist()
+
+            best_idx = max(range(len(scores)), key=lambda i: scores[i])
+            best_label = prompts[best_idx]
+
+            print(f"Image: {image_path.name}")
+            for prompt, score in zip(prompts, scores):
+                print(f"  {prompt}: {score:.4f}")
+            print(f"  Final scene label: {best_label}")
+            print()
+
+
+if __name__ == "__main__":
+    main()
