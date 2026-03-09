@@ -1,55 +1,26 @@
-#data/images/ 폴더 안의 이미지 전체를 자동으로 읽고, 각 이미지의 scene label을 출력하는 것
-
-from pathlib import Path
-
-import torch
-from PIL import Image
-import open_clip
-from config import prompts
+from config import PROMPTS
+from clip_core import load_clip_model, infer_image, get_image_paths, get_device
 
 
 def main() -> None:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    print(f"Using device: {get_device()}")
 
-    model, _, preprocess = open_clip.create_model_and_transforms(
-        "ViT-B-32",
-        pretrained="openai",
-    )
-    model = model.to(device)
-    tokenizer = open_clip.get_tokenizer("ViT-B-32")
-
-    text = tokenizer(prompts).to(device)
-
-    image_dir = Path("data/images")
-    image_paths = list(image_dir.glob("*.jpg")) + list(image_dir.glob("*.jpeg")) + list(image_dir.glob("*.png"))
+    model, preprocess, text_features, device = load_clip_model()
+    image_paths = get_image_paths()
 
     if not image_paths:
-        raise FileNotFoundError(f"No images found in {image_dir}")
+        raise FileNotFoundError("No images found in data/images")
 
     print("\nBatch CLIP inference results:\n")
 
-    with torch.no_grad():
-        text_features = model.encode_text(text)
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+    for image_path in image_paths:
+        result = infer_image(image_path, model, preprocess, text_features, device)
 
-        for image_path in image_paths:
-            image = preprocess(Image.open(image_path).convert("RGB")).unsqueeze(0).to(device)
-
-            image_features = model.encode_image(image)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-
-            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-            scores = similarity[0].cpu().tolist()
-
-            best_idx = max(range(len(scores)), key=lambda i: scores[i])
-            best_label = prompts[best_idx]
-
-            print(f"Image: {image_path.name}")
-            for prompt, score in zip(prompts, scores):
-                print(f"  {prompt}: {score:.4f}")
-            print(f"  Final scene label: {best_label}")
-            print()
+        print(f"Image: {result['image']}")
+        for prompt, score in zip(PROMPTS, result["scores"]):
+            print(f"  {prompt}: {score:.4f}")
+        print(f"  Final scene label: {result['best_label']}")
+        print()
 
 
 if __name__ == "__main__":

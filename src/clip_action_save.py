@@ -1,98 +1,71 @@
-# clip_action_save.py : 액션의 실험 결과 표 (v2)
-
 from pathlib import Path
 import csv
 
-import torch
-from PIL import Image
-import open_clip
-from config import prompts
+from config import ACTION_MAP, DEFAULT_ACTION
+from clip_core import load_clip_model, infer_image, get_image_paths, get_device
+
+CONF_THRESHOLD = 0.6
 
 
-def decide_action(label: str) -> str:
-    if label == "a long indoor corridor":
-        return "forward"
-    elif label == "free open floor space":
-        return "forward"
-    elif label == "a chair blocking the robot path":
-        return "turn"
-    elif label == "a close wall directly blocking the robot":
-        return "rotate"
-    elif label == "a door directly in front of the robot":
-        return "approach"
-    else:
+def decide_action(label: str, score: float) -> str:
+    if score < CONF_THRESHOLD:
         return "stop"
+    return ACTION_MAP.get(label, DEFAULT_ACTION)
+
+
+def get_confidence_status(score: float) -> str:
+    if score < CONF_THRESHOLD:
+        return "low_confidence"
+    return "confident"
 
 
 def main() -> None:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    print(f"Using device: {get_device()}")
 
-    model, _, preprocess = open_clip.create_model_and_transforms(
-        "ViT-B-32",
-        pretrained="openai",
-    )
-    model = model.to(device)
-    tokenizer = open_clip.get_tokenizer("ViT-B-32")
-
-    text = tokenizer(prompts).to(device)
-
-    image_dir = Path("data/images")
-    image_paths = (
-        list(image_dir.glob("*.jpg"))
-        + list(image_dir.glob("*.jpeg"))
-        + list(image_dir.glob("*.png"))
-    )
+    model, preprocess, text_features, device = load_clip_model()
+    image_paths = get_image_paths()
 
     if not image_paths:
-        raise FileNotFoundError(f"No images found in {image_dir}")
+        raise FileNotFoundError("No images found in data/images")
 
     results_dir = Path("results")
     results_dir.mkdir(exist_ok=True)
-
-    output_csv = results_dir / "clip_action_results_v2.csv"
+    output_csv = results_dir / "clip_action_results_v4.csv"
 
     rows = []
 
-    print("\nCLIP + Action Decision Results (v2):\n")
+    print("\nCLIP + Action Decision Results (v4):\n")
 
-    with torch.no_grad():
-        text_features = model.encode_text(text)
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+    for image_path in image_paths:
+        result = infer_image(image_path, model, preprocess, text_features, device)
 
-        for image_path in image_paths:
-            image = preprocess(Image.open(image_path).convert("RGB")).unsqueeze(0).to(device)
+        best_label = result["best_label"]
+        best_score = result["best_score"]
+        confidence_status = get_confidence_status(best_score)
+        action = decide_action(best_label, best_score)
 
-            image_features = model.encode_image(image)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
+        print(f"Image: {result['image']}")
+        print(f"  Final scene label: {best_label}")
+        print(f"  Best score: {best_score:.4f}")
+        print(f"  Confidence status: {confidence_status}")
+        print(f"  Action: {action}")
 
-            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-            scores = similarity[0].cpu().tolist()
+        if best_score < CONF_THRESHOLD:
+            print(f"  Warning: low confidence (< {CONF_THRESHOLD})")
+        print()
 
-            best_idx = max(range(len(scores)), key=lambda i: scores[i])
-            best_label = prompts[best_idx]
-            best_score = scores[best_idx]
-            action = decide_action(best_label)
-
-            print(f"Image: {image_path.name}")
-            for prompt, score in zip(prompts, scores):
-                print(f"  {prompt}: {score:.4f}")
-            print(f"  Final scene label: {best_label}")
-            print(f"  Best score: {best_score:.4f}")
-            print(f"  Action: {action}")
-            print()
-
-            rows.append({
-                "image": image_path.name,
-                "scene_label": best_label,
-                "best_score": round(best_score, 4),
-                "action": action,
-            })
+        rows.append({
+            "image": result["image"],
+            "scene_label": best_label,
+            "best_score": round(best_score, 4),
+            "confidence_status": confidence_status,
+            "action": action,
+        })
 
     with open(output_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["image", "scene_label", "best_score", "action"]
+            fieldnames=["image", "scene_label", "best_score", "confidence_status", "action"]
         )
         writer.writeheader()
         writer.writerows(rows)
