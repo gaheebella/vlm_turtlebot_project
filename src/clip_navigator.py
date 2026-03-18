@@ -9,7 +9,6 @@ def compute_direction_scores(frame_bgr, text_goal: str, model, preprocess, devic
     text_goal: ex) "a chair", "a door"
     returns: {"left": float, "center": float, "right": float}
     """
-
     if frame_bgr is None:
         raise ValueError("frame_bgr is None")
 
@@ -22,7 +21,6 @@ def compute_direction_scores(frame_bgr, text_goal: str, model, preprocess, devic
         "right": frame_bgr[:, int(w * 0.6):],
     }
 
-    # tokenizer는 여기서 직접 생성
     tokenizer = open_clip.get_tokenizer("ViT-B-32")
     text = tokenizer([text_goal]).to(device)
 
@@ -47,6 +45,9 @@ def compute_direction_scores(frame_bgr, text_goal: str, model, preprocess, devic
 
 def decide_velocity(scores: dict, obstacle_penalty: float = 0.0):
     """
+    scores: {"left": float, "center": float, "right": float}
+    obstacle_penalty: 현재는 사용하지 않거나 0.0으로 둠
+
     returns:
         linear_vel, angular_vel, best_name, margin, mode
     """
@@ -55,20 +56,20 @@ def decide_velocity(scores: dict, obstacle_penalty: float = 0.0):
     second_score = sorted_items[1][1]
     margin = best_score - second_score
 
+    # 점수 차이가 너무 작으면 불확실하다고 보고 정지
     if margin < 0.02:
         return 0.0, 0.0, best_name, margin, "UNCERTAIN_STOP"
 
+    # 장애물 회피는 나중에 붙일 수 있도록 자리만 남김
     if obstacle_penalty >= 0.5:
         return 0.0, 0.3, best_name, margin, "AVOIDANCE"
 
+    # 방향 제어
     if best_name == "left":
-        linear_vel = 0.0
-        angular_vel = 0.25
-    elif best_name == "right":
-        linear_vel = 0.0
-        angular_vel = -0.25
-    else:
-        linear_vel = 0.08
-        angular_vel = 0.0
+        return 0.0, 0.25, best_name, margin, "TURN_LEFT"
 
-    return linear_vel, angular_vel, best_name, margin, "GOAL_TRACKING"
+    elif best_name == "right":
+        return 0.0, -0.25, best_name, margin, "TURN_RIGHT"
+
+    else:  # center
+        return 0.08, 0.0, best_name, margin, "GO_FORWARD"
