@@ -14,11 +14,11 @@ def compute_direction_scores(frame_bgr, text_goal: str, model, preprocess, devic
 
     h, w = frame_bgr.shape[:2]
 
-    # 겹치게 crop
+    # 겹치게 crop (좌/중/우)
     crops = {
-        "left": frame_bgr[:, :int(w * 0.4)],
+        "left":   frame_bgr[:, :int(w * 0.4)],
         "center": frame_bgr[:, int(w * 0.3):int(w * 0.7)],
-        "right": frame_bgr[:, int(w * 0.6):],
+        "right":  frame_bgr[:, int(w * 0.6):],
     }
 
     tokenizer = open_clip.get_tokenizer("ViT-B-32")
@@ -46,7 +46,10 @@ def compute_direction_scores(frame_bgr, text_goal: str, model, preprocess, devic
 def decide_velocity(scores: dict, obstacle_penalty: float = 0.0):
     """
     scores: {"left": float, "center": float, "right": float}
-    obstacle_penalty: 현재는 사용하지 않거나 0.0으로 둠
+    obstacle_penalty: 0.0 ~ 1.0 (LiDAR 기반 전방 장애물 패널티)
+
+    CLIP  → 목표를 향해 접근 (goal-seeking)
+    LiDAR → 물리적 장애물 긴급 회피 (image_subscriber에서 처리)
 
     returns:
         linear_vel, angular_vel, best_name, margin, mode
@@ -56,20 +59,25 @@ def decide_velocity(scores: dict, obstacle_penalty: float = 0.0):
     second_score = sorted_items[1][1]
     margin = best_score - second_score
 
-    # 점수 차이가 너무 작으면 불확실하다고 보고 정지
-    if margin < 0.02:
-        return 0.0, 0.0, best_name, margin, "UNCERTAIN_STOP"
-
-    # 장애물 회피는 나중에 붙일 수 있도록 자리만 남김
+    # LiDAR 장애물 회피 최우선 (CLIP 무시)
     if obstacle_penalty >= 0.5:
-        return 0.0, 0.3, best_name, margin, "AVOIDANCE"
+        return 0.0, 0.15, best_name, margin, "AVOIDANCE"
 
-    # 방향 제어
+    # 점수 차이 너무 작으면 불확실 → 천천히 전진하며 탐색
+    if margin < 0.005:
+        return 0.08, 0.0, best_name, margin, "SEARCH_FORWARD"
+
+    # 목표가 정면 → 전진
+    if best_name == "center":
+        return 0.15, 0.0, best_name, margin, "GO_FORWARD"
+
+    # 목표가 좌/우이고 margin 작으면 → 전진하면서 살짝 회전
+    if margin < 0.02:
+        angular = 0.08 if best_name == "left" else -0.08
+        return 0.10, angular, best_name, margin, "FORWARD_ADJUST"
+
+    # 목표가 좌/우이고 margin 크면 → 제자리 회전으로 목표 정면으로
     if best_name == "left":
-        return 0.0, 0.25, best_name, margin, "TURN_LEFT"
-
-    elif best_name == "right":
-        return 0.0, -0.25, best_name, margin, "TURN_RIGHT"
-
-    else:  # center
-        return 0.08, 0.0, best_name, margin, "GO_FORWARD"
+        return 0.0, 0.15, best_name, margin, "TURN_LEFT"
+    else:
+        return 0.0, -0.15, best_name, margin, "TURN_RIGHT"
