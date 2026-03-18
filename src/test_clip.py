@@ -9,7 +9,7 @@ def main() -> None:
 
     model, preprocess, text_features, device = load_clip_model()
 
-    image_path = Path("data/images/corridor.jpeg")
+    image_path = Path("dataset/raw_frames/frame_0000.jpg")
     if not image_path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
