@@ -21,7 +21,6 @@ class ImageSubscriber(Node):
 
         self.bridge = CvBridge()
 
-        # CLIP 모델 로드 (한 번만)
         loaded = load_clip_model()
         if len(loaded) == 4:
             self.model, self.preprocess, _, self.device = loaded
@@ -30,7 +29,6 @@ class ImageSubscriber(Node):
         else:
             raise ValueError("load_clip_model() 반환값 개수를 확인하세요.")
 
-        # Navigator 생성 (한 번만)
         self.navigator = ClipDirectionNavigator(
             model=self.model,
             preprocess=self.preprocess,
@@ -38,27 +36,30 @@ class ImageSubscriber(Node):
             model_name="ViT-B-32",
             history_size=5,
             center_bias=0.015,
+            detect_threshold=0.24,
+            margin_threshold=0.03,
+            stop_area_ratio=0.38,
         )
 
-        # 목표 텍스트
         self.goal_text = "a chair"
         self.goal_lock = threading.Lock()
 
-        # 프레임 제어
-        self.frame_count = 0
-        self.infer_interval = 1  # 1이면 매 프레임 추론
+        self.nav_state = "SEARCHING"
+        self.search_turn_dir = 1
+        self.lost_count = 0
+        self.detect_count = 0
 
-        # 장애물 패널티
+        self.frame_count = 0
+        self.infer_interval = 1
+
         self.latest_penalty = 0.0
 
-        # QoS
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=10
         )
 
-        # 카메라 구독
         self.subscription = self.create_subscription(
             Image,
             '/image_raw',
@@ -66,7 +67,6 @@ class ImageSubscriber(Node):
             qos
         )
 
-        # LiDAR 구독
         self.scan_sub = self.create_subscription(
             LaserScan,
             '/scan',
@@ -74,10 +74,8 @@ class ImageSubscriber(Node):
             qos
         )
 
-        # cmd_vel 퍼블리셔
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        # 목표 입력 스레드
         self.input_thread = threading.Thread(
             target=self._goal_input_loop,
             daemon=True
@@ -85,11 +83,8 @@ class ImageSubscriber(Node):
         self.input_thread.start()
 
         self.get_logger().info(f"CLIP Navigator started | goal: '{self.goal_text}'")
-        self.get_logger().info("터미널에서 새 목표 텍스트를 입력하면 즉시 변경됩니다.")
+        self.get_logger().info("상태 기반 탐색/정렬/접근 모드로 실행됩니다.")
 
-    # ─────────────────────────────────────────────
-    # LiDAR 콜백
-    # ─────────────────────────────────────────────
     def scan_callback(self, msg: LaserScan):
         ranges = np.array(msg.ranges, dtype=np.float32)
         total = len(ranges)
@@ -98,7 +93,6 @@ class ImageSubscriber(Node):
             self.latest_penalty = 0.0
             return
 
-        # 전방 ±20도
         front_count = max(1, int(total * 20 / 360))
         front = np.concatenate([ranges[-front_count:], ranges[:front_count]])
         front = front[np.isfinite(front)]
@@ -108,25 +102,13 @@ class ImageSubscriber(Node):
             return
 
         min_dist = float(np.min(front))
-        threshold = 0.5  # 0.5m 이내면 장애물
+        threshold = 0.5
 
         if min_dist < threshold:
             self.latest_penalty = (threshold - min_dist) / threshold
-
-            twist = Twist()
-            twist.linear.x = 0.0
-            twist.angular.z = 0.4
-            self.cmd_pub.publish(twist)
-
-            self.get_logger().warn(
-                f"[AVOIDANCE] 장애물 dist={min_dist:.2f}m → 회피 중"
-            )
         else:
             self.latest_penalty = 0.0
 
-    # ─────────────────────────────────────────────
-    # 목표 텍스트 런타임 변경
-    # ─────────────────────────────────────────────
     def _goal_input_loop(self):
         while True:
             try:
@@ -137,6 +119,11 @@ class ImageSubscriber(Node):
                 if new_goal:
                     with self.goal_lock:
                         self.goal_text = new_goal
+
+                    self.nav_state = "SEARCHING"
+                    self.lost_count = 0
+                    self.detect_count = 0
+
                     self.get_logger().info(f"목표 변경 → '{new_goal}'")
             except EOFError:
                 break
@@ -144,16 +131,9 @@ class ImageSubscriber(Node):
                 self.get_logger().error(f"goal input 오류: {e}")
                 break
 
-    # ─────────────────────────────────────────────
-    # 카메라 콜백
-    # ─────────────────────────────────────────────
     def image_callback(self, msg: Image):
         self.frame_count += 1
         if self.frame_count % self.infer_interval != 0:
-            return
-
-        # 장애물 회피 중이면 CLIP 추론 스킵
-        if self.latest_penalty > 0.0:
             return
 
         try:
@@ -166,15 +146,32 @@ class ImageSubscriber(Node):
             current_goal = self.goal_text
 
         try:
-            scores = self.navigator.compute_direction_scores(
+            scores, meta = self.navigator.compute_direction_scores(
                 frame_bgr=frame,
                 text_goal=current_goal
             )
 
-            linear_v, angular_v, best_raw, best_smooth, margin, mode = self.navigator.decide_velocity(
+            if meta["target_visible"]:
+                self.detect_count += 1
+                self.lost_count = 0
+            else:
+                self.lost_count += 1
+                self.detect_count = 0
+
+            if self.lost_count > 25:
+                self.search_turn_dir *= -1
+                self.lost_count = 0
+                self.get_logger().warn("목표를 오래 못 찾아 탐색 회전 방향을 반전합니다.")
+
+            linear_v, angular_v, next_state, mode = self.navigator.decide_stateful_velocity(
+                nav_state=self.nav_state,
                 scores=scores,
-                obstacle_penalty=self.latest_penalty
+                meta=meta,
+                obstacle_penalty=self.latest_penalty,
+                search_turn_dir=self.search_turn_dir,
             )
+
+            self.nav_state = next_state
 
             twist = Twist()
             twist.linear.x = float(linear_v)
@@ -182,46 +179,40 @@ class ImageSubscriber(Node):
             self.cmd_pub.publish(twist)
 
             self.get_logger().info(
-                f"[CLIP] goal='{current_goal}' | "
+                f"[STATE={self.nav_state}] goal='{current_goal}' | "
                 f"L:{scores['left']:.3f} C:{scores['center']:.3f} R:{scores['right']:.3f} | "
-                f"raw={best_raw} smooth={best_smooth} margin={margin:.4f} | "
-                f"mode={mode} v={linear_v:.2f} w={angular_v:.2f}"
+                f"raw={meta['best_raw']} smooth={meta['best_smooth']} "
+                f"score={meta['best_score']:.3f} margin={meta['margin']:.4f} "
+                f"visible={meta['target_visible']} area={meta['approx_area_ratio']:.2f} | "
+                f"mode={mode} v={linear_v:.2f} w={angular_v:.2f} obstacle={self.latest_penalty:.2f}"
             )
 
             self._draw_overlay(
                 frame=frame,
+                goal_text=current_goal,
                 scores=scores,
-                best_raw=best_raw,
-                best_smooth=best_smooth,
-                margin=margin,
+                meta=meta,
                 mode=mode,
                 linear_v=linear_v,
                 angular_v=angular_v,
-                goal_text=current_goal
             )
 
         except Exception as e:
             self.get_logger().error(f"inference/control 오류: {e}")
 
-    # ─────────────────────────────────────────────
-    # 시각화
-    # ─────────────────────────────────────────────
     def _draw_overlay(
         self,
         frame,
+        goal_text,
         scores,
-        best_raw,
-        best_smooth,
-        margin,
+        meta,
         mode,
         linear_v,
         angular_v,
-        goal_text
     ):
         vis = frame.copy()
         h, w = vis.shape[:2]
 
-        # ROI 경계선
         cv2.line(vis, (int(w * 0.3), 0), (int(w * 0.3), h), (100, 100, 255), 1)
         cv2.line(vis, (int(w * 0.4), 0), (int(w * 0.4), h), (255, 0, 0), 2)
         cv2.line(vis, (int(w * 0.6), 0), (int(w * 0.6), h), (255, 0, 0), 2)
@@ -229,9 +220,11 @@ class ImageSubscriber(Node):
 
         lines = [
             (f"Goal: {goal_text}", (0, 255, 0)),
+            (f"State: {self.nav_state}   Mode: {mode}", (255, 255, 0)),
             (f"L:{scores['left']:.3f}  C:{scores['center']:.3f}  R:{scores['right']:.3f}", (0, 255, 255)),
-            (f"Best raw: {best_raw}  smooth: {best_smooth}", (255, 255, 0)),
-            (f"Margin: {margin:.4f}  Mode: {mode}", (255, 255, 0)),
+            (f"Best raw: {meta['best_raw']}  smooth: {meta['best_smooth']}", (255, 255, 0)),
+            (f"Score: {meta['best_score']:.3f}  Margin: {meta['margin']:.4f}", (255, 255, 0)),
+            (f"Visible: {meta['target_visible']}  AreaRatio: {meta['approx_area_ratio']:.2f}", (0, 165, 255)),
             (f"Obstacle penalty: {self.latest_penalty:.2f}", (0, 165, 255)),
             (f"cmd_vel -> v:{linear_v:.2f}  w:{angular_v:.2f}", (255, 0, 255)),
         ]
@@ -240,7 +233,7 @@ class ImageSubscriber(Node):
             cv2.putText(
                 vis,
                 text,
-                (15, 30 + i * 30),
+                (15, 30 + i * 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 color,
@@ -249,6 +242,10 @@ class ImageSubscriber(Node):
 
         cv2.imshow("CLIP Navigator", vis)
         cv2.waitKey(1)
+
+    def stop_robot(self):
+        stop_twist = Twist()
+        self.cmd_pub.publish(stop_twist)
 
 
 def main(args=None):
@@ -260,11 +257,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        # 종료 전 정지 명령
-        stop_twist = Twist()
-        node.cmd_pub.publish(stop_twist)
+        node.stop_robot()
         time.sleep(0.3)
-
         cv2.destroyAllWindows()
         node.destroy_node()
         rclpy.shutdown()
