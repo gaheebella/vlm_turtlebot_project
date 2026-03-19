@@ -190,3 +190,7 @@ Robot Movement
 * Perception–Control 통합 구조 설계
 
 > CLIP을 활용하여 자연어 목표를 인식하고, 상태 기반 제어를 통해 로봇이 목표 객체를 탐색하고 접근하는 semantic navigation 시스템
+
+
+
+2026.03.19 업데이트
