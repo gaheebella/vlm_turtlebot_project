@@ -176,9 +176,9 @@ Robot Movement
 
 ---
 
-## 11. Demo Description (발표용 한 줄)
+## 11. Demo Description 
 
-> CLIP 기반 semantic perception을 활용하여 자연어 목표를 탐색하고, 상태 기반 제어를 통해 목표 객체로 접근하는 navigation 시스템입니다.
+> CLIP 기반 semantic perception을 활용하여 자연어 목표를 탐색하고, 상태 기반 제어를 통해 목표 객체로 접근하는 navigation 시스템
 
 ---
 
