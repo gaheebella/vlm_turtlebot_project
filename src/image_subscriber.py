@@ -240,6 +240,10 @@ class ImageSubscriber(Node):
                 2
             )
 
+        # 창 크게 보기
+        cv2.namedWindow("CLIP Navigator", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("CLIP Navigator", 1280, 960)
+
         cv2.imshow("CLIP Navigator", vis)
         cv2.waitKey(1)
 

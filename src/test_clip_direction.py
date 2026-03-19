@@ -1,17 +1,17 @@
 import cv2
-from clip_navigator import compute_direction_scores
+from clip_navigator import compute_direction_scores, decide_velocity
 from clip_core import load_clip_model
 
+# ── 설정 ────────────────────────────────────────────────────
 image_path = "test/test2.jpeg"
 goal_text = "a chair"
+# ────────────────────────────────────────────────────────────
 
 frame = cv2.imread(image_path)
 if frame is None:
     raise FileNotFoundError(f"이미지를 읽을 수 없습니다: {image_path}")
 
 loaded = load_clip_model()
-
-# tokenizer는 쓰지 않음
 if len(loaded) == 4:
     model, preprocess, _, device = loaded
 elif len(loaded) == 3:
@@ -27,9 +27,16 @@ scores = compute_direction_scores(
     device=device,
 )
 
-print(scores)
-print("best =", max(scores, key=scores.get))
+linear_v, angular_v, best_name, margin, mode = decide_velocity(
+    scores=scores,
+    obstacle_penalty=0.0,
+)
 
-sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-margin = sorted_scores[0][1] - sorted_scores[1][1]
-print("margin =", margin)
+print("=" * 40)
+print(f"Goal      : {goal_text}")
+print(f"Scores    : {scores}")
+print(f"Best      : {best_name}")
+print(f"Margin    : {margin:.4f}")
+print(f"Mode      : {mode}")
+print(f"cmd_vel   : v={linear_v:.2f}  w={angular_v:.2f}")
+print("=" * 40)

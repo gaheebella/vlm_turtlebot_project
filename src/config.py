@@ -1,19 +1,19 @@
 PROMPTS = [
-    "a door directly in front of the robot",
-    "a chair blocking the robot path",
-    "a table obstacle",
-    "a long indoor corridor",
-    "free open floor space",
-    "a close wall directly blocking the robot",
+    "a door",
+    "a chair",
+    "a table",
+    "a corridor",
+    "open floor",
+    "a wall",
 ]
 
 ACTION_MAP = {
-    "a long indoor corridor": "forward",
-    "free open floor space": "forward",
-    "a chair blocking the robot path": "turn",
-    "a close wall directly blocking the robot": "rotate",
-    "a door directly in front of the robot": "approach",
-    "a table obstacle": "avoid",
+    "a corridor": "forward",
+    "open floor": "forward",
+    "a chair": "turn",
+    "a wall": "rotate",
+    "a door": "approach",
+    "a table": "avoid",
 }
 
 DEFAULT_ACTION = "stop"
