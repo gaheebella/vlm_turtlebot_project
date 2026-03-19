@@ -176,20 +176,14 @@ Robot Movement
 
 ---
 
-## 11. Demo Description 
-
-> CLIP 기반 semantic perception을 활용하여 자연어 목표를 탐색하고, 상태 기반 제어를 통해 목표 객체로 접근하는 navigation 시스템
-
----
-
-## 12. Contribution
+## 11. Contribution
 
 * CLIP 기반 방향 추론 구조 설계
 * State machine 기반 navigation 로직 구현
 * ROS2 실시간 제어 시스템 구축
 * Perception–Control 통합 구조 설계
 
-> CLIP을 활용하여 자연어 목표를 인식하고, 상태 기반 제어를 통해 로봇이 목표 객체를 탐색하고 접근하는 semantic navigation 시스템
+> CCLIP 기반 semantic perception을 활용하여 자연어 목표를 인식하고, 상태 기반 제어를 통해 로봇이 목표 객체를 탐색하고 접근하는 semantic navigation 시스템
 
 
 
