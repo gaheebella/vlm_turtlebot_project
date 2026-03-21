@@ -1,0 +1,5 @@
+a red box
+a traffic cone
+a black box
+a gray floor
+an empty scene
