@@ -57,7 +57,7 @@
     <!-- 빨간 박스 -->
     <model name="red_box">
       <static>false</static>
-      <pose>3.0 -0.8 0.5 0 0 0</pose>
+      <pose>1.6 -0.2 0.5 0 0 0</pose>
       <link name="link">
         <inertial>
           <mass>1.0</mass>
@@ -94,7 +94,7 @@
     <!-- 콘 -->
     <model name="cone">
       <static>false</static>
-      <pose>3.4 0.6 0 0 0 0</pose>
+      <pose>3.0 1.0 0 0 0 0</pose>
       <link name="link">
         <inertial>
           <mass>0.5</mass>
@@ -135,7 +135,7 @@
     <!-- RGBD 카메라 -->
     <model name="rgbd_camera">
       <static>true</static>
-      <pose>0 0 1.0 0 0 0</pose>
+      <pose>1.5 0 1.0 0 0.25 0</pose>
       <link name="link">
         <sensor name="rgbd_sensor" type="rgbd_camera">
           <always_on>true</always_on>
