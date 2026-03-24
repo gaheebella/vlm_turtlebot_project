@@ -14,7 +14,7 @@ class ClipDirectionNavigator:
         history_size=5,
         center_bias=0.015,
         detect_threshold=0.24,
-        margin_threshold=0.03,
+        margin_threshold=0.005,
         stop_area_ratio=0.38,
     ):
         self.model = model

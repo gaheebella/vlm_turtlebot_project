@@ -280,29 +280,33 @@
       </link>
 
       <!-- joints -->
-      <joint name="left_wheel_joint" type="revolute">
-        <parent>chassis</parent>
-        <child>left_wheel</child>
-        <axis>
-          <xyz>0 1 0</xyz>
-          <limit>
+        <joint name="left_wheel_joint" type="revolute">
+    <parent>chassis</parent>
+    <child>left_wheel</child>
+    <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
             <lower>-1000000</lower>
             <upper>1000000</upper>
-          </limit>
-        </axis>
-      </joint>
+            <effort>1000000</effort>
+            <velocity>1000</velocity>
+        </limit>
+    </axis>
+    </joint>
 
-      <joint name="right_wheel_joint" type="revolute">
-        <parent>chassis</parent>
-        <child>right_wheel</child>
-        <axis>
-          <xyz>0 1 0</xyz>
-          <limit>
+    <joint name="right_wheel_joint" type="revolute">
+    <parent>chassis</parent>
+    <child>right_wheel</child>
+    <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
             <lower>-1000000</lower>
             <upper>1000000</upper>
-          </limit>
-        </axis>
-      </joint>
+            <effort>1000000</effort>
+            <velocity>1000</velocity>
+        </limit>
+    </axis>
+    </joint>
 
       <joint name="caster_joint" type="ball">
         <parent>chassis</parent>
